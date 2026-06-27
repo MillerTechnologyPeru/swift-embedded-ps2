@@ -1,0 +1,6 @@
+ps2_print
+ps2_clear_screen
+ps2_set_color
+ps2_draw_pixel
+ps2_vsync
+ps2_exit
