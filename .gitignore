@@ -68,3 +68,4 @@ fastlane/test_output
 
 # VS Code
 .vscode/
+.swift-version
