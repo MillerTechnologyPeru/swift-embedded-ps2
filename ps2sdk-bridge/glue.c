@@ -181,16 +181,6 @@ void ps2__draw_convert_rgbq(void* inst, U32 colors_ptr, U32 count, U32 vertices_
     draw_convert_rgbq(colors, count, vertices, colour_f, q);
 }
 
-U64 ps2__color_to_rgbaq(void* inst, U32 r, U32 g, U32 b, U32 a, F32 q) {
-    (void)inst;
-    return (U64)color_to_RGBAQ(r, g, b, a, q);
-}
-
-U64 ps2__vertex_to_xyz2(void* inst, U32 gs, F32 x, F32 y, F32 z) {
-    (void)inst;
-    return (U64)vertex_to_XYZ2((GSGLOBAL*)(size_t)gs, x, y, z);
-}
-
 /* Build GSPRIMPOINT array from screen-space vertices and colors, then draw.
  * Lives here because gs_rgbaq / gs_xyz2 are 128-bit types that can't be
  * constructed from WASM-side Swift without losing the GS packet tag bits. */
