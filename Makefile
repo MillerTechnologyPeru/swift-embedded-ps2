@@ -65,7 +65,7 @@ PS2_CFLAGS  := \
 PS2_LDFLAGS := \
     -T$(PS2SDK)/ee/startup/linkfile \
     -L$(PS2SDK)/ee/lib \
-    -lkernel -lc -lm
+    -lkernel -ldraw -lgraph -ldma -lpacket2 -lc -lm
 
 # -----------------------------------------------------------------------------
 # Targets
@@ -128,7 +128,7 @@ docker-elf:
 	    -v "$(CURDIR):/project" \
 	    -w /project \
 	    ps2dev/ps2dev \
-	    sh -c "apk add --no-cache cmake git && \
+	    sh -c "apk add --no-cache cmake git build-base && \
 	           git clone --depth 1 https://github.com/turbolent/w2c2 /tmp/w2c2 && \
 	           cmake -S /tmp/w2c2 -B /tmp/w2c2-build -DCMAKE_BUILD_TYPE=Release && \
 	           cmake --build /tmp/w2c2-build -j\$$(nproc) && \
