@@ -118,6 +118,34 @@ func ps2_build_and_draw(
 )
 
 // ---------------------------------------------------------------------------
+// Scene state accessors (state lives in glue.c as C statics)
+// ---------------------------------------------------------------------------
+
+@_extern(wasm, module: "ps2", name: "get_object_rotation")
+@_extern(c)
+func ps2_get_object_rotation(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "set_object_rotation")
+@_extern(c)
+func ps2_set_object_rotation(_ i: Int32, _ v: Float32)
+
+@_extern(wasm, module: "ps2", name: "get_object_position")
+@_extern(c)
+func ps2_get_object_position(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "get_camera_position")
+@_extern(c)
+func ps2_get_camera_position(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "get_camera_rotation")
+@_extern(c)
+func ps2_get_camera_rotation(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "get_view_screen")
+@_extern(c)
+func ps2_get_view_screen(_ dst: UnsafeMutableRawPointer)
+
+// ---------------------------------------------------------------------------
 // gsKit_convert_xyz (Swift implementation — mirrors the C version in cube.c)
 // ---------------------------------------------------------------------------
 
@@ -229,23 +257,11 @@ let cube_points: InlineArray<36, Int32> = [
     20, 21, 22, 21, 22, 23,
 ]
 
-// ---------------------------------------------------------------------------
-// Mutable Graphics State
-// ---------------------------------------------------------------------------
-
-var g_object_rotation: VECTOR = (0.0, 0.0, 0.0, 1.0)
-
 let blackRgbaQ: UInt64 = 0x0000000080000000
 
 // ---------------------------------------------------------------------------
 // Exposed Swift functions
 // ---------------------------------------------------------------------------
-
-@_expose(wasm, "_gs_init")
-@_cdecl("_gs_init")
-func _gs_init() {
-    g_object_rotation = (0.0, 0.0, 0.0, 1.0)
-}
 
 @_expose(wasm, "_gs_flip_screen")
 @_cdecl("_gs_flip_screen")
@@ -280,10 +296,19 @@ func _gs_render_cube() {
                        Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32)
                     = (0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0)
 
-    // Camera and object transforms
-    var object_position: VECTOR = (0.0, 0.0, 0.0, 1.0)
-    var camera_position: VECTOR = (0.0, 0.0, 100.0, 1.0)
-    var camera_rotation: VECTOR = (0.0, 0.0, 0.0, 1.0)
+    // Read scene state from C statics and build local WASM-memory copies
+    var object_position: VECTOR = (
+        ps2_get_object_position(0), ps2_get_object_position(1),
+        ps2_get_object_position(2), ps2_get_object_position(3))
+    var object_rotation: VECTOR = (
+        ps2_get_object_rotation(0), ps2_get_object_rotation(1),
+        ps2_get_object_rotation(2), ps2_get_object_rotation(3))
+    var camera_position: VECTOR = (
+        ps2_get_camera_position(0), ps2_get_camera_position(1),
+        ps2_get_camera_position(2), ps2_get_camera_position(3))
+    var camera_rotation: VECTOR = (
+        ps2_get_camera_rotation(0), ps2_get_camera_rotation(1),
+        ps2_get_camera_rotation(2), ps2_get_camera_rotation(3))
 
     // Expand indexed mesh into flat per-triangle arrays
     for i in 0..<POINT_COUNT {
@@ -292,23 +317,20 @@ func _gs_render_cube() {
         c_colours[i] = cube_colours[vi]
     }
 
-    // Build projection matrix once per frame
+    // Load projection matrix computed once in gs_render_init
     withUnsafeMutableBytes(of: &view_screen) { m in
-        ps2_create_view_screen(m.baseAddress!, 4.0/3.0, -0.5, 0.5, -0.5, 0.5, 1.0, 2000.0)
+        ps2_get_view_screen(m.baseAddress!)
     }
 
-    if ps2_gsKit_global_get_zbuffering(gs) != 0 {
-        ps2_gsKit_set_test(gs, 1)
-    }
-    ps2_gsKit_global_set_primaaenable(gs, 1)
-
-    // Spin the cube
-    g_object_rotation.0 += 0.008
-    g_object_rotation.1 += 0.012
+    // Spin the cube — update C-side state
+    ps2_set_object_rotation(0, object_rotation.0 + 0.008)
+    ps2_set_object_rotation(1, object_rotation.1 + 0.012)
+    object_rotation.0 = ps2_get_object_rotation(0)
+    object_rotation.1 = ps2_get_object_rotation(1)
 
     // Model → World
     withUnsafeMutableBytes(of: &object_position) { pos in
-        withUnsafeMutableBytes(of: &g_object_rotation) { rot in
+        withUnsafeMutableBytes(of: &object_rotation) { rot in
             withUnsafeMutableBytes(of: &local_world) { m in
                 ps2_create_local_world(m.baseAddress!, pos.baseAddress!, rot.baseAddress!)
             }
