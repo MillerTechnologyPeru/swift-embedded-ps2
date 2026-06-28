@@ -17,7 +17,7 @@ let package = Package(
                     "-D_EE",
                     "-I\(vendor)/gsKit",
                     "-I\(vendor)/ps2sdk/common",
-                    "-I\(vendor)/ps2sdk/ee",
+                    "-idirafter", "\(vendor)/ps2sdk/ee",
                 ])
             ]
         ),
@@ -37,7 +37,7 @@ let package = Package(
                     "-Xcc", "-D_EE",
                     "-Xcc", "-I\(vendor)/gsKit",
                     "-Xcc", "-I\(vendor)/ps2sdk/common",
-                    "-Xcc", "-I\(vendor)/ps2sdk/ee",
+                    "-Xcc", "-idirafter", "-Xcc", "\(vendor)/ps2sdk/ee",
                 ])
             ],
             linkerSettings: [

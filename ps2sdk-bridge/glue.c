@@ -191,6 +191,25 @@ U64 ps2__vertex_to_xyz2(void* inst, U32 gs, F32 x, F32 y, F32 z) {
     return (U64)vertex_to_XYZ2((GSGLOBAL*)(size_t)gs, x, y, z);
 }
 
+/* Build GSPRIMPOINT array from screen-space vertices and colors, then draw.
+ * Lives here because gs_rgbaq / gs_xyz2 are 128-bit types that can't be
+ * constructed from WASM-side Swift without losing the GS packet tag bits. */
+void ps2__build_and_draw(void* inst, U32 gs, U32 n,
+                          U32 screen_verts_ptr, U32 colors_ptr) {
+    wasmMemory *mem = PS2Demo_memory((PS2DemoInstance*)inst);
+    vertex_f_t *sv  = (vertex_f_t*)(mem->data + screen_verts_ptr);
+    color_t    *col = (color_t*)   (mem->data + colors_ptr);
+    GSGLOBAL   *gsGlobal = (GSGLOBAL*)(size_t)gs;
+
+    GSPRIMPOINT *gv = memalign(128, sizeof(GSPRIMPOINT) * n);
+    for (U32 i = 0; i < n; i++) {
+        gv[i].rgbaq = color_to_RGBAQ(col[i].r, col[i].g, col[i].b, col[i].a, 0.0f);
+        gv[i].xyz2  = vertex_to_XYZ2(gsGlobal, sv[i].x, sv[i].y, (int)sv[i].z);
+    }
+    gsKit_prim_list_triangle_gouraud_3d(gsGlobal, n, gv);
+    free(gv);
+}
+
 /* -------------------------------------------------------------------------
  * Memory management
  * ------------------------------------------------------------------------- */

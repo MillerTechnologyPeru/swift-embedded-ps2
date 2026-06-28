@@ -18,5 +18,4 @@ ps2_create_world_view
 ps2_create_local_screen
 ps2_calculate_vertices
 ps2_draw_convert_rgbq
-ps2_color_to_rgbaq
-ps2_vertex_to_xyz2
+ps2_build_and_draw
