@@ -65,7 +65,7 @@ PS2_CFLAGS  := \
 PS2_LDFLAGS := \
     -T$(PS2SDK)/ee/startup/linkfile \
     -L$(PS2SDK)/ee/lib \
-    -lkernel -ldraw -lgraph -ldma -lpacket2 -lc -lm
+    -lkernel -lgskit -ldmakit -ldraw -lmath3d -lgraph -ldma -lc -lm
 
 # -----------------------------------------------------------------------------
 # Targets
@@ -128,13 +128,18 @@ docker-elf:
 	    -v "$(CURDIR):/project" \
 	    -w /project \
 	    ps2dev/ps2dev \
-	    sh -c "apk add --no-cache cmake git build-base && \
+	    sh -c "apk add --no-cache cmake git build-base pkgconf && \
+	           rm -f /usr/local/ps2dev/ps2sdk/bin/mips64r5900el-ps2-elf-pkg-config && \
+	           ln -s /usr/bin/pkgconf /usr/local/ps2dev/ps2sdk/bin/mips64r5900el-ps2-elf-pkg-config && \
+	           git clone --depth 1 https://github.com/ps2dev/gsKit /tmp/gsKit && \
+	           cd /tmp/gsKit && make && make install && \
+	           cd /project && \
 	           git clone --depth 1 https://github.com/turbolent/w2c2 /tmp/w2c2 && \
 	           cmake -S /tmp/w2c2 -B /tmp/w2c2-build -DCMAKE_BUILD_TYPE=Release && \
 	           cmake --build /tmp/w2c2-build -j\$$(nproc) && \
 	           /tmp/w2c2-build/w2c2/w2c2 -p /project/$(WASM_OUT) /project/$(C_OUT) && \
-	           $(PS2_CC) $(PS2_CFLAGS) /project/$(C_OUT) /project/ps2sdk-bridge/glue.c \
-	               $(PS2_LDFLAGS) -o /project/$(ELF_OUT)"
+	           $(PS2_CC) $(PS2_CFLAGS) -I/usr/local/ps2dev/gsKit/include /project/$(C_OUT) /project/ps2sdk-bridge/glue.c \
+	               $(PS2_LDFLAGS) -L/usr/local/ps2dev/gsKit/lib -o /project/$(ELF_OUT)"
 
 ## Convenience: print ELF info (requires ps2dev toolchain or Docker)
 info: $(ELF_OUT)
