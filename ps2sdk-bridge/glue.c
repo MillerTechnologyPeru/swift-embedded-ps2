@@ -111,13 +111,16 @@ static VECTOR      *cube_temp_verts  = NULL;
 static VECTOR      *cube_verts       = NULL;
 static color_t     *cube_colors      = NULL;
 
-static MATRIX      *get_cube_view_screen(void) { return &cube_view_screen; }
-static GSPRIMPOINT *get_cube_gs_vertices(void) { return cube_gs_vertices; }
-static VECTOR      *get_cube_c_verts(void)     { return cube_c_verts; }
-static VECTOR      *get_cube_c_colours(void)   { return cube_c_colours; }
-static VECTOR      *get_cube_temp_verts(void)  { return cube_temp_verts; }
-static VECTOR      *get_cube_verts(void)       { return cube_verts; }
-static color_t     *get_cube_colors(void)      { return cube_colors; }
+static int          get_cube_points_count(void) { return cube_points_count; }
+static u64          get_cube_black_rgbaq(void)  { return CUBE_BLACK_RGBAQ; }
+static GSGLOBAL    *get_gs_global(void)         { return g_gsGlobal; }
+static MATRIX      *get_cube_view_screen(void)  { return &cube_view_screen; }
+static GSPRIMPOINT *get_cube_gs_vertices(void)  { return cube_gs_vertices; }
+static VECTOR      *get_cube_c_verts(void)      { return cube_c_verts; }
+static VECTOR      *get_cube_c_colours(void)    { return cube_c_colours; }
+static VECTOR      *get_cube_temp_verts(void)   { return cube_temp_verts; }
+static VECTOR      *get_cube_verts(void)        { return cube_verts; }
+static color_t     *get_cube_colors(void)       { return cube_colors; }
 
 /* -------------------------------------------------------------------------
  * gsKit initialization
@@ -231,7 +234,7 @@ static void gs_render_init(void) {
 }
 
 void ps2__gs_render_cube(void* inst) {
-    int n = cube_points_count;
+    int n = get_cube_points_count();
 
     MATRIX local_world, world_view, local_screen;
 
@@ -256,16 +259,16 @@ void ps2__gs_render_cube(void* inst) {
     create_local_screen(local_screen, local_world, world_view, *get_cube_view_screen());
 
     calculate_vertices(get_cube_temp_verts(), n, get_cube_c_verts(), local_screen);
-    cube_convert_xyz((vertex_f_t *)get_cube_verts(), g_gsGlobal, n, (vertex_f_t *)get_cube_temp_verts());
+    cube_convert_xyz((vertex_f_t *)get_cube_verts(), get_gs_global(), n, (vertex_f_t *)get_cube_temp_verts());
     draw_convert_rgbq(get_cube_colors(), n, (vertex_f_t *)get_cube_temp_verts(), (color_f_t *)get_cube_c_colours(), 0x80);
 
     for (int i = 0; i < n; i++) {
         get_cube_gs_vertices()[i].rgbaq = color_to_RGBAQ(get_cube_colors()[i].r, get_cube_colors()[i].g, get_cube_colors()[i].b, get_cube_colors()[i].a, 0.0f);
-        get_cube_gs_vertices()[i].xyz2  = vertex_to_XYZ2(g_gsGlobal, get_cube_verts()[i][0], get_cube_verts()[i][1], get_cube_verts()[i][2]);
+        get_cube_gs_vertices()[i].xyz2  = vertex_to_XYZ2(get_gs_global(), get_cube_verts()[i][0], get_cube_verts()[i][1], get_cube_verts()[i][2]);
     }
 
-    gsKit_clear(g_gsGlobal, CUBE_BLACK_RGBAQ);
-    gsKit_prim_list_triangle_gouraud_3d(g_gsGlobal, n, get_cube_gs_vertices());
+    gsKit_clear(get_gs_global(), get_cube_black_rgbaq());
+    gsKit_prim_list_triangle_gouraud_3d(get_gs_global(), n, get_cube_gs_vertices());
 }
 
 /* -------------------------------------------------------------------------
