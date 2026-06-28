@@ -1,5 +1,10 @@
 /*
- * ps2sdk-bridge/glue.c — PS2 graphics + w2c2 host glue (gsKit version)
+ * ps2sdk-bridge/glue.c — PS2 graphics + w2c2 host glue (gsKit FFI)
+ *
+ * Swift handles all rendering logic via FFI imports.
+ * This file provides: gsKit init, GSGLOBAL accessors, and thin
+ * wrappers around math3d/draw/gsKit functions that operate on
+ * raw pointers (since w2c2 passes WASM memory offsets as U32).
  *
  * w2c2 import naming: {module}__{name}(void* instance, ...)
  */
@@ -26,127 +31,14 @@
  * ------------------------------------------------------------------------- */
 
 static GSGLOBAL *g_gsGlobal = NULL;
-static VECTOR g_object_position = { 0.00f, 0.00f, 0.00f, 1.00f };
-static VECTOR g_object_rotation = { 0.00f, 0.00f, 0.00f, 1.00f };
-static VECTOR g_camera_position = { 0.00f, 0.00f, 100.00f, 1.00f };
-static VECTOR g_camera_rotation = { 0.00f, 0.00f, 0.00f, 1.00f };
-
-static const u64 BLACK_RGBAQ = GS_SETREG_RGBAQ(0x00,0x00,0x00,0x80,0x00);
-
-/* Cube mesh data (from gsKit cube example) */
-#define VERTEX_COUNT 24
-#define POINT_COUNT 36
-
-static VECTOR vertices[VERTEX_COUNT] = {
- {  10.00f,  10.00f,  10.00f, 1.00f },
- {  10.00f,  10.00f, -10.00f, 1.00f },
- {  10.00f, -10.00f,  10.00f, 1.00f },
- {  10.00f, -10.00f, -10.00f, 1.00f },
- { -10.00f,  10.00f,  10.00f, 1.00f },
- { -10.00f,  10.00f, -10.00f, 1.00f },
- { -10.00f, -10.00f,  10.00f, 1.00f },
- { -10.00f, -10.00f, -10.00f, 1.00f },
- { -10.00f,  10.00f,  10.00f, 1.00f },
- {  10.00f,  10.00f,  10.00f, 1.00f },
- { -10.00f,  10.00f, -10.00f, 1.00f },
- {  10.00f,  10.00f, -10.00f, 1.00f },
- { -10.00f, -10.00f,  10.00f, 1.00f },
- {  10.00f, -10.00f,  10.00f, 1.00f },
- { -10.00f, -10.00f, -10.00f, 1.00f },
- {  10.00f, -10.00f, -10.00f, 1.00f },
- { -10.00f,  10.00f,  10.00f, 1.00f },
- {  10.00f,  10.00f,  10.00f, 1.00f },
- { -10.00f, -10.00f,  10.00f, 1.00f },
- {  10.00f, -10.00f,  10.00f, 1.00f },
- { -10.00f,  10.00f, -10.00f, 1.00f },
- {  10.00f,  10.00f, -10.00f, 1.00f },
- { -10.00f, -10.00f, -10.00f, 1.00f },
- {  10.00f, -10.00f, -10.00f, 1.00f }
-};
-
-static VECTOR colours[VERTEX_COUNT] = {
- { 1.00f, 0.00f, 0.00f, 1.00f },
- { 1.00f, 0.00f, 0.00f, 1.00f },
- { 1.00f, 0.00f, 0.00f, 1.00f },
- { 1.00f, 0.00f, 0.00f, 1.00f },
- { 1.00f, 0.00f, 0.00f, 1.00f },
- { 1.00f, 0.00f, 0.00f, 1.00f },
- { 1.00f, 0.00f, 0.00f, 1.00f },
- { 1.00f, 0.00f, 0.00f, 1.00f },
- { 0.00f, 1.00f, 0.00f, 1.00f },
- { 0.00f, 1.00f, 0.00f, 1.00f },
- { 0.00f, 1.00f, 0.00f, 1.00f },
- { 0.00f, 1.00f, 0.00f, 1.00f },
- { 0.00f, 1.00f, 0.00f, 1.00f },
- { 0.00f, 1.00f, 0.00f, 1.00f },
- { 0.00f, 1.00f, 0.00f, 1.00f },
- { 0.00f, 1.00f, 0.00f, 1.00f },
- { 0.00f, 0.00f, 1.00f, 1.00f },
- { 0.00f, 0.00f, 1.00f, 1.00f },
- { 0.00f, 0.00f, 1.00f, 1.00f },
- { 0.00f, 0.00f, 1.00f, 1.00f },
- { 0.00f, 0.00f, 1.00f, 1.00f },
- { 0.00f, 0.00f, 1.00f, 1.00f },
- { 0.00f, 0.00f, 1.00f, 1.00f },
- { 0.00f, 0.00f, 1.00f, 1.00f }
-};
-
-static int points[POINT_COUNT] = {
-  0,  1,  2,
-  1,  2,  3,
-  4,  5,  6,
-  5,  6,  7,
-  8,  9, 10,
-  9, 10, 11,
- 12, 13, 14,
- 13, 14, 15,
- 16, 17, 18,
- 17, 18, 19,
- 20, 21, 22,
- 21, 22, 23
-};
 
 /* -------------------------------------------------------------------------
  * gsKit initialization
  * ------------------------------------------------------------------------- */
 
-/* Custom vertex conversion (from gsKit cube example) */
-static int gsKit_convert_xyz(vertex_f_t *output, GSGLOBAL* gsGlobal, int count, vertex_f_t *vertices)
-{
-    int z;
-    unsigned int max_z;
+void ps2__gs_init(void* inst) {
+    (void)inst;
 
-    switch(gsGlobal->PSMZ){
-    case GS_PSMZ_32:
-        z = 32;
-        break;
-    case GS_PSMZ_24:
-        z = 24;
-        break;
-    case GS_PSMZ_16:
-    case GS_PSMZ_16S:
-        z = 16;
-        break;
-    default:
-        return -1;
-    }
-
-    float center_x = gsGlobal->Width / 2;
-    float center_y = gsGlobal->Height / 2;
-    max_z = 1 << (z - 1);
-
-    int i;
-    for (i = 0; i < count; i++)
-    {
-        output[i].x = ((vertices[i].x + 1.0f) * center_x);
-        output[i].y = ((vertices[i].y + 1.0f) * center_y);
-        output[i].z = (unsigned int)((vertices[i].z + 1.0f) * max_z);
-    }
-
-    return 0;
-}
-
-void gs_init(void) {
     g_gsGlobal = gsKit_init_global();
     g_gsGlobal->PrimAlphaEnable = GS_SETTING_ON;
     gsKit_set_primalpha(g_gsGlobal, GS_SETREG_ALPHA(0, 1, 0, 1, 0), 0);
@@ -162,79 +54,160 @@ void gs_init(void) {
 }
 
 /* -------------------------------------------------------------------------
- * Render functions
+ * gsKit flip
  * ------------------------------------------------------------------------- */
 
-void gs_flip_screen(void) {
+void ps2__gsKit_flip_screen(void* inst) {
+    (void)inst;
     gsKit_queue_exec(g_gsGlobal);
     gsKit_sync_flip(g_gsGlobal);
 }
 
-void gs_render_cube(void) {
-    MATRIX local_world;
-    MATRIX world_view;
-    MATRIX view_screen;
-    MATRIX local_screen;
+/* -------------------------------------------------------------------------
+ * GSGLOBAL accessors (return U32 since w2c2 uses 32-bit pointers)
+ * ------------------------------------------------------------------------- */
 
-    VECTOR *temp_vertices;
-    VECTOR *verts;
-    color_t *colors;
-    GSPRIMPOINT *gs_vertices = (GSPRIMPOINT *)memalign(128, sizeof(GSPRIMPOINT) * POINT_COUNT);
-    VECTOR *c_verts = (VECTOR *)memalign(128, sizeof(VECTOR) * POINT_COUNT);
-    VECTOR *c_colours = (VECTOR *)memalign(128, sizeof(VECTOR) * POINT_COUNT);
+U32 ps2__gsKit_global_get(void* inst) {
+    (void)inst;
+    return (U32)(size_t)g_gsGlobal;
+}
 
-    int i;
-    for (i = 0; i < POINT_COUNT; i++) {
-        c_verts[i][0] = vertices[points[i]][0];
-        c_verts[i][1] = vertices[points[i]][1];
-        c_verts[i][2] = vertices[points[i]][2];
-        c_verts[i][3] = vertices[points[i]][3];
-        c_colours[i][0] = colours[points[i]][0];
-        c_colours[i][1] = colours[points[i]][1];
-        c_colours[i][2] = colours[points[i]][2];
-        c_colours[i][3] = colours[points[i]][3];
-    }
+U32 ps2__gsKit_global_get_width(void* inst, U32 gs) {
+    (void)inst;
+    return ((GSGLOBAL*)(size_t)gs)->Width;
+}
 
-    temp_vertices = memalign(128, sizeof(VECTOR) * POINT_COUNT);
-    verts = memalign(128, sizeof(VECTOR) * POINT_COUNT);
-    colors = memalign(128, sizeof(color_t) * POINT_COUNT);
+U32 ps2__gsKit_global_get_height(void* inst, U32 gs) {
+    (void)inst;
+    return ((GSGLOBAL*)(size_t)gs)->Height;
+}
 
-    create_view_screen(view_screen, 4.0f/3.0f, -0.5f, 0.5f, -0.5f, 0.5f, 1.00f, 2000.00f);
+U32 ps2__gsKit_global_get_psmz(void* inst, U32 gs) {
+    (void)inst;
+    return ((GSGLOBAL*)(size_t)gs)->PSMZ;
+}
 
-    if (g_gsGlobal->ZBuffering == GS_SETTING_ON)
-        gsKit_set_test(g_gsGlobal, GS_ZTEST_ON);
-    g_gsGlobal->PrimAAEnable = GS_SETTING_ON;
+U32 ps2__gsKit_global_get_zbuffering(void* inst, U32 gs) {
+    (void)inst;
+    return ((GSGLOBAL*)(size_t)gs)->ZBuffering;
+}
 
-    /* Spin the cube */
-    g_object_rotation[0] += 0.008f;
-    g_object_rotation[1] += 0.012f;
+void ps2__gsKit_global_set_primaaenable(void* inst, U32 gs, U32 value) {
+    (void)inst;
+    ((GSGLOBAL*)(size_t)gs)->PrimAAEnable = value;
+}
 
-    create_local_world(local_world, g_object_position, g_object_rotation);
-    create_world_view(world_view, g_camera_position, g_camera_rotation);
-    create_local_screen(local_screen, local_world, world_view, view_screen);
+void ps2__gsKit_global_set_zbuffering(void* inst, U32 gs, U32 value) {
+    (void)inst;
+    ((GSGLOBAL*)(size_t)gs)->ZBuffering = value;
+}
 
-    calculate_vertices(temp_vertices, POINT_COUNT, c_verts, local_screen);
-    gsKit_convert_xyz((vertex_f_t*)verts, g_gsGlobal, POINT_COUNT, (vertex_f_t*)temp_vertices);
-    draw_convert_rgbq(colors, POINT_COUNT, (vertex_f_t*)temp_vertices, (color_f_t*)c_colours, 0x80);
+void ps2__gsKit_set_test(void* inst, U32 gs, U32 test) {
+    (void)inst;
+    gsKit_set_test((GSGLOBAL*)(size_t)gs, test);
+}
 
-    for (i = 0; i < POINT_COUNT; i++) {
-        gs_vertices[i].rgbaq = color_to_RGBAQ(colors[i].r, colors[i].g, colors[i].b, colors[i].a, 0.0f);
-        gs_vertices[i].xyz2 = vertex_to_XYZ2(g_gsGlobal, verts[i][0], verts[i][1], verts[i][2]);
-    }
+void ps2__gsKit_clear(void* inst, U32 gs, U64 color) {
+    (void)inst;
+    gsKit_clear((GSGLOBAL*)(size_t)gs, color);
+}
 
-    gsKit_clear(g_gsGlobal, BLACK_RGBAQ);
-    gsKit_prim_list_triangle_gouraud_3d(g_gsGlobal, POINT_COUNT, gs_vertices);
-
-    free(temp_vertices);
-    free(verts);
-    free(colors);
-    free(gs_vertices);
-    free(c_verts);
-    free(c_colours);
+void ps2__gsKit_prim_list_triangle_gouraud_3d(void* inst, U32 gs, U32 count, U32 vertices_ptr) {
+    (void)inst;
+    wasmMemory *mem = PS2Demo_memory((PS2DemoInstance*)inst);
+    GSPRIMPOINT *vertices = (GSPRIMPOINT*)(mem->data + vertices_ptr);
+    gsKit_prim_list_triangle_gouraud_3d((GSGLOBAL*)(size_t)gs, count, vertices);
 }
 
 /* -------------------------------------------------------------------------
- * PS2 host imports (w2c2)
+ * math3d wrappers (operate on WASM memory offsets)
+ * ------------------------------------------------------------------------- */
+
+void ps2__create_view_screen(void* inst, U32 matrix_ptr,
+    F32 aspect, F32 left, F32 right, F32 top, F32 bottom, F32 near, F32 ffar) {
+    (void)inst;
+    wasmMemory *mem = PS2Demo_memory((PS2DemoInstance*)inst);
+    MATRIX *m = (MATRIX*)(mem->data + matrix_ptr);
+    create_view_screen(*m, aspect, left, right, top, bottom, near, ffar);
+}
+
+void ps2__create_local_world(void* inst, U32 matrix_ptr, U32 position_ptr, U32 rotation_ptr) {
+    (void)inst;
+    wasmMemory *mem = PS2Demo_memory((PS2DemoInstance*)inst);
+    MATRIX *m = (MATRIX*)(mem->data + matrix_ptr);
+    VECTOR *pos = (VECTOR*)(mem->data + position_ptr);
+    VECTOR *rot = (VECTOR*)(mem->data + rotation_ptr);
+    create_local_world(*m, *pos, *rot);
+}
+
+void ps2__create_world_view(void* inst, U32 matrix_ptr, U32 position_ptr, U32 rotation_ptr) {
+    (void)inst;
+    wasmMemory *mem = PS2Demo_memory((PS2DemoInstance*)inst);
+    MATRIX *m = (MATRIX*)(mem->data + matrix_ptr);
+    VECTOR *pos = (VECTOR*)(mem->data + position_ptr);
+    VECTOR *rot = (VECTOR*)(mem->data + rotation_ptr);
+    create_world_view(*m, *pos, *rot);
+}
+
+void ps2__create_local_screen(void* inst, U32 result_ptr, U32 local_world_ptr, U32 world_view_ptr, U32 view_screen_ptr) {
+    (void)inst;
+    wasmMemory *mem = PS2Demo_memory((PS2DemoInstance*)inst);
+    MATRIX *result = (MATRIX*)(mem->data + result_ptr);
+    MATRIX *local_world = (MATRIX*)(mem->data + local_world_ptr);
+    MATRIX *world_view = (MATRIX*)(mem->data + world_view_ptr);
+    MATRIX *view_screen = (MATRIX*)(mem->data + view_screen_ptr);
+    create_local_screen(*result, *local_world, *world_view, *view_screen);
+}
+
+void ps2__calculate_vertices(void* inst, U32 output_ptr, U32 count, U32 input_ptr, U32 matrix_ptr) {
+    (void)inst;
+    wasmMemory *mem = PS2Demo_memory((PS2DemoInstance*)inst);
+    VECTOR *output = (VECTOR*)(mem->data + output_ptr);
+    VECTOR *input = (VECTOR*)(mem->data + input_ptr);
+    MATRIX *matrix = (MATRIX*)(mem->data + matrix_ptr);
+    calculate_vertices(output, count, input, *matrix);
+}
+
+/* -------------------------------------------------------------------------
+ * draw wrappers
+ * ------------------------------------------------------------------------- */
+
+void ps2__draw_convert_rgbq(void* inst, U32 colors_ptr, U32 count, U32 vertices_ptr, U32 colour_f_ptr, U32 q) {
+    (void)inst;
+    wasmMemory *mem = PS2Demo_memory((PS2DemoInstance*)inst);
+    color_t *colors = (color_t*)(mem->data + colors_ptr);
+    vertex_f_t *vertices = (vertex_f_t*)(mem->data + vertices_ptr);
+    color_f_t *colour_f = (color_f_t*)(mem->data + colour_f_ptr);
+    draw_convert_rgbq(colors, count, vertices, colour_f, q);
+}
+
+U64 ps2__color_to_rgbaq(void* inst, U32 r, U32 g, U32 b, U32 a, F32 q) {
+    (void)inst;
+    return (U64)color_to_RGBAQ(r, g, b, a, q);
+}
+
+U64 ps2__vertex_to_xyz2(void* inst, U32 gs, F32 x, F32 y, F32 z) {
+    (void)inst;
+    return (U64)vertex_to_XYZ2((GSGLOBAL*)(size_t)gs, x, y, z);
+}
+
+/* -------------------------------------------------------------------------
+ * Memory management
+ * ------------------------------------------------------------------------- */
+
+U32 ps2__memalign(void* inst, U32 alignment, U32 size) {
+    (void)inst;
+    void *ptr = memalign(alignment, size);
+    return (U32)(size_t)ptr;
+}
+
+void ps2__free(void* inst, U32 ptr) {
+    (void)inst;
+    free((void*)(size_t)ptr);
+}
+
+/* -------------------------------------------------------------------------
+ * Print / Exit
  * ------------------------------------------------------------------------- */
 
 void ps2__print(void* inst, U32 wasm_ptr, U32 len) {
@@ -244,21 +217,6 @@ void ps2__print(void* inst, U32 wasm_ptr, U32 len) {
     U32 j;
     for (j = 0; j < len; j++) putchar((unsigned char)str[j]);
     fflush(stdout);
-}
-
-void ps2__gs_init(void* inst) {
-    (void)inst;
-    gs_init();
-}
-
-void ps2__gs_render_cube(void* inst) {
-    (void)inst;
-    gs_render_cube();
-}
-
-void ps2__gs_flip_screen(void* inst) {
-    (void)inst;
-    gs_flip_screen();
 }
 
 void ps2__exit(void* inst, U32 code) {
@@ -304,7 +262,7 @@ int main(int argc, char** argv) {
 
     printf("swift-embedded-ps2 booting...\n");
     printf("Initializing gsKit...\n");
-    gs_init();
+    ps2__gs_init(NULL);
     printf("GS initialized. Running swift_main...\n");
 
     static PS2DemoInstance instance;
