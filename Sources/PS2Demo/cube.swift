@@ -241,21 +241,21 @@ let blackRgbaQ: UInt64 = 0x0000000080000000
 // Exposed Swift functions
 // ---------------------------------------------------------------------------
 
-@_expose(wasm, "gs_init")
-@_cdecl("gs_init")
-func gs_init() {
+@_expose(wasm, "_gs_init")
+@_cdecl("_gs_init")
+func _gs_init() {
     g_object_rotation = (0.0, 0.0, 0.0, 1.0)
 }
 
-@_expose(wasm, "gs_flip_screen")
-@_cdecl("gs_flip_screen")
-func gs_flip_screen() {
+@_expose(wasm, "_gs_flip_screen")
+@_cdecl("_gs_flip_screen")
+func _gs_flip_screen() {
     ps2_gsKit_flip_screen()
 }
 
-@_expose(wasm, "gs_render_cube")
-@_cdecl("gs_render_cube")
-func gs_render_cube() {
+@_expose(wasm, "_gs_render_cube")
+@_cdecl("_gs_render_cube")
+func _gs_render_cube() {
     let gs = ps2_gsKit_global_get()
 
     // InlineArray — fixed-size, stored inline in WASM linear memory (no heap).
