@@ -71,9 +71,95 @@ PS2_LDFLAGS := \
 # Targets
 # -----------------------------------------------------------------------------
 
-.PHONY: all wasm c elf clean docker-elf help
+# -----------------------------------------------------------------------------
+# MIPS direct-compilation target (bypasses WASM pipeline)
+# -----------------------------------------------------------------------------
+
+TOOLCHAIN      := /Volumes/Crucial-2TB/Developer/build/Ninja-ReleaseAssert
+SWIFTC_MIPS    := $(TOOLCHAIN)/swift-macosx-arm64/bin/swiftc
+CLANG_MIPS     := $(TOOLCHAIN)/llvm-macosx-arm64/bin/clang
+LLD_MIPS       := $(TOOLCHAIN)/llvm-macosx-arm64/bin/ld.lld
+OBJCOPY_MIPS   := $(TOOLCHAIN)/llvm-macosx-arm64/bin/llvm-objcopy
+
+SWIFT_MIPS_TARGET := mipsel-none-none-elf
+CLANG_MIPS_TARGET := mipsel-none-elf
+SWIFT_MIPS_LIBS   := $(TOOLCHAIN)/swift-macosx-arm64/lib/swift/embedded/$(SWIFT_MIPS_TARGET)
+MIPS_BUILD        := $(BUILD)/mips
+MIPS_ELF          := $(BUILD)/PS2Demo-mips.elf
+
+# ELF32 MIPS-II + soft-float — matches PS2 homebrew convention (see prussia project).
+# mipsel-none-none-elf produces ELFCLASS32 which the PS2 BIOS ELF loader expects.
+# mips64el-none-none-elf produces ELFCLASS64 which the PS2 BIOS does not handle.
+SWIFTFLAGS_MIPS := \
+    -target $(SWIFT_MIPS_TARGET) \
+    -enable-experimental-feature Embedded \
+    -wmo -Osize \
+    -Xcc -march=mips2 \
+    -Xcc -mabi=o32 \
+    -Xcc -mno-abicalls \
+    -Xcc -fno-pic \
+    -Xcc -fno-PIC \
+    -Xcc -msoft-float \
+    -Xcc -fno-stack-protector \
+    -Xcc -G0 \
+    -Xllvm -mattr=+noabicalls \
+    -Xllvm -relocation-model=static
+
+CLANGFLAGS_MIPS := \
+    --target=$(CLANG_MIPS_TARGET) \
+    -march=mips2 \
+    -mabi=o32 \
+    -mno-abicalls \
+    -fno-pic \
+    -msoft-float \
+    -G0 \
+    -c
+
+LLDFLAGS_MIPS := \
+    -m elf32ltsmip \
+    -T ps2sdk-bridge/ps2.ld \
+    --no-eh-frame-hdr \
+    --allow-multiple-definition \
+    -nostdlib
+
+PS1_LIBC := $(HOME)/Developer/swift-embedded-ps1/psn00bsdk/libc.a
+
+SWIFT_MIPS_RUNTIME := \
+    $(SWIFT_MIPS_LIBS)/libswiftEmbeddedPlatformPOSIX.a \
+    $(SWIFT_MIPS_LIBS)/libswiftExclusivitySingleThreaded.a \
+    $(PS1_LIBC)
+
+$(MIPS_BUILD):
+	mkdir -p $@
+
+$(MIPS_BUILD)/boot.o: ps2sdk-bridge/boot_mips.S | $(MIPS_BUILD)
+	$(CLANG_MIPS) $(CLANGFLAGS_MIPS) -o $@ $<
+
+$(MIPS_BUILD)/shim.o: ps2sdk-bridge/shim_mips.c | $(MIPS_BUILD)
+	$(CLANG_MIPS) $(CLANGFLAGS_MIPS) -o $@ $<
+
+$(MIPS_BUILD)/main.o: Sources/PS2DemoMIPS/main.swift | $(MIPS_BUILD)
+	$(SWIFTC_MIPS) $(SWIFTFLAGS_MIPS) \
+	    -module-name PS2DemoMIPS \
+	    -c $< -o $@
+
+$(MIPS_ELF): $(MIPS_BUILD)/boot.o $(MIPS_BUILD)/shim.o $(MIPS_BUILD)/main.o \
+             ps2sdk-bridge/ps2.ld | $(MIPS_BUILD)
+	$(LLD_MIPS) $(LLDFLAGS_MIPS) \
+	    -o $@ \
+	    $(MIPS_BUILD)/boot.o \
+	    $(MIPS_BUILD)/shim.o \
+	    $(MIPS_BUILD)/main.o \
+	    $(SWIFT_MIPS_RUNTIME)
+	@echo "  ✓  $@"
+	@file $@
+
+.PHONY: all wasm c elf mips clean docker-elf help
 
 all: wasm c elf
+
+## MIPS direct — Swift → MIPS-I ELF (no WASM, no w2c2)
+mips: $(MIPS_ELF)
 
 ## Step 1 — Embedded Swift → WASM
 wasm: $(WASM_OUT)
