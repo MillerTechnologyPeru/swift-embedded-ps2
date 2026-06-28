@@ -69,3 +69,6 @@ fastlane/test_output
 # VS Code
 .vscode/
 .swift-version
+
+# PS2
+Sources/CPS2/vendor/*
