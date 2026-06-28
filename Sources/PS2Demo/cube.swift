@@ -151,14 +151,12 @@ func gsKit_convert_xyz(
 }
 
 // ---------------------------------------------------------------------------
-// Mesh Data
+// Mesh Data — InlineArray: fixed size, stored in WASM data segment (no heap)
 // ---------------------------------------------------------------------------
 
-let VERTEX_COUNT: Int = 24
 let POINT_COUNT: Int = 36
 
-// VECTOR = float[4] imported as (Float, Float, Float, Float)
-let cube_vertices: [VECTOR] = [
+let cube_vertices: InlineArray<26, VECTOR> = [
     (10, 10, 10, 1),
     (10, 10, -10, 1),
     (10, -10, 10, 1),
@@ -187,7 +185,7 @@ let cube_vertices: [VECTOR] = [
     (-10, -10, -10, 1),
 ]
 
-let cube_colours: [VECTOR] = [
+let cube_colours: InlineArray<32, VECTOR> = [
     (1, 0, 0, 1),
     (1, 0, 0, 1),
     (1, 0, 0, 1),
@@ -222,13 +220,13 @@ let cube_colours: [VECTOR] = [
     (0, 0, 1, 1),
 ]
 
-let cube_points: [Int32] = [
+let cube_points: InlineArray<36, Int32> = [
     0, 1, 2,  1, 2, 3,
     4, 5, 6,  5, 6, 7,
     8, 9, 10, 9, 10, 11,
     12, 13, 14, 13, 14, 15,
     16, 17, 18, 17, 18, 19,
-    20, 21, 22, 21, 22, 23
+    20, 21, 22, 21, 22, 23,
 ]
 
 // ---------------------------------------------------------------------------
@@ -259,21 +257,28 @@ func gs_flip_screen() {
 @_cdecl("gs_render_cube")
 func gs_render_cube() {
     let gs = ps2_gsKit_global_get()
-    let n = POINT_COUNT
 
-    // Per-frame working buffers in WASM linear memory.
-    // VECTOR = (Float, Float, Float, Float); vertex_f_t and color_t are C unions.
-    var c_verts  = Array(repeating: (0 as Float32, 0 as Float32, 0 as Float32, 0 as Float32), count: n)
-    var c_colours = Array(repeating: (0 as Float32, 0 as Float32, 0 as Float32, 0 as Float32), count: n)
-    var temp_verts   = Array(repeating: vertex_f_t(xyzw: (0, 0, 0, 0)), count: n)
-    var screen_verts = Array(repeating: vertex_f_t(xyzw: (0, 0, 0, 0)), count: n)
-    var colors = Array(repeating: color_t(rgbaq: 0), count: n)
+    // InlineArray — fixed-size, stored inline in WASM linear memory (no heap).
+    // Size is a compile-time constant so the type carries it; no `count:` arg.
+    var c_verts:      InlineArray<36, VECTOR>     = InlineArray(repeating: (0, 0, 0, 0))
+    var c_colours:    InlineArray<36, VECTOR>     = InlineArray(repeating: (0, 0, 0, 0))
+    var temp_verts:   InlineArray<36, vertex_f_t> = InlineArray(repeating: vertex_f_t(xyzw: (0, 0, 0, 0)))
+    var screen_verts: InlineArray<36, vertex_f_t> = InlineArray(repeating: vertex_f_t(xyzw: (0, 0, 0, 0)))
+    var colors:       InlineArray<36, color_t>    = InlineArray(repeating: color_t(rgbaq: 0))
 
     // MATRIX = float[16] imported as a 16-element Float tuple
-    var local_world  = (0 as Float32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-    var world_view   = (0 as Float32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-    var view_screen  = (0 as Float32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-    var local_screen = (0 as Float32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    var local_world:  (Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32,
+                       Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32)
+                    = (0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0)
+    var world_view:   (Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32,
+                       Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32)
+                    = (0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0)
+    var view_screen:  (Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32,
+                       Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32)
+                    = (0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0)
+    var local_screen: (Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32,
+                       Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32)
+                    = (0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0)
 
     // Camera and object transforms
     var object_position: VECTOR = (0.0, 0.0, 0.0, 1.0)
@@ -281,7 +286,7 @@ func gs_render_cube() {
     var camera_rotation: VECTOR = (0.0, 0.0, 0.0, 1.0)
 
     // Expand indexed mesh into flat per-triangle arrays
-    for i in 0..<n {
+    for i in 0..<POINT_COUNT {
         let vi = Int(cube_points[i])
         c_verts[i]   = cube_vertices[vi]
         c_colours[i] = cube_colours[vi]
@@ -336,12 +341,12 @@ func gs_render_cube() {
     }
 
     // Transform vertices into clip space
-    c_verts.withUnsafeMutableBytes { cv in
+    withUnsafeMutableBytes(of: &c_verts) { cv in
         withUnsafeMutableBytes(of: &local_screen) { ls in
-            temp_verts.withUnsafeMutableBytes { tv in
+            withUnsafeMutableBytes(of: &temp_verts) { tv in
                 ps2_calculate_vertices(
                     tv.baseAddress!,
-                    Int32(n),
+                    Int32(POINT_COUNT),
                     UnsafeRawPointer(cv.baseAddress!),
                     UnsafeRawPointer(ls.baseAddress!)
                 )
@@ -350,22 +355,26 @@ func gs_render_cube() {
     }
 
     // Clip-space → screen pixel coords (Swift port of gsKit_convert_xyz)
-    temp_verts.withUnsafeBufferPointer { tv in
-        screen_verts.withUnsafeMutableBufferPointer { sv in
-            _ = gsKit_convert_xyz(output: sv.baseAddress!, gs: gs,
-                                  count: Int32(n), vertices: tv.baseAddress!)
+    withUnsafeMutableBytes(of: &temp_verts) { tv in
+        withUnsafeMutableBytes(of: &screen_verts) { sv in
+            _ = gsKit_convert_xyz(
+                output: sv.baseAddress!.assumingMemoryBound(to: vertex_f_t.self),
+                gs: gs,
+                count: Int32(POINT_COUNT),
+                vertices: tv.baseAddress!.assumingMemoryBound(to: vertex_f_t.self)
+            )
         }
     }
 
     // Float colours → GS color_t (fixed-point RGBAQ)
-    temp_verts.withUnsafeBufferPointer { tv in
-        c_colours.withUnsafeBytes { cc in
-            colors.withUnsafeMutableBufferPointer { col in
+    withUnsafeMutableBytes(of: &temp_verts) { tv in
+        withUnsafeMutableBytes(of: &c_colours) { cc in
+            withUnsafeMutableBytes(of: &colors) { col in
                 ps2_draw_convert_rgbq(
-                    UnsafeMutableRawPointer(col.baseAddress!),
-                    Int32(n),
+                    col.baseAddress!,
+                    Int32(POINT_COUNT),
                     UnsafeRawPointer(tv.baseAddress!),
-                    cc.baseAddress!,
+                    UnsafeRawPointer(cc.baseAddress!),
                     0x80
                 )
             }
@@ -375,10 +384,10 @@ func gs_render_cube() {
     // Clear and draw — GSPRIMPOINT construction happens in glue.c (128-bit
     // gs_rgbaq/gs_xyz2 can't be built cleanly from WASM; C side does it)
     ps2_gsKit_clear(gs, blackRgbaQ)
-    screen_verts.withUnsafeBufferPointer { sv in
-        colors.withUnsafeBufferPointer { col in
+    withUnsafeMutableBytes(of: &screen_verts) { sv in
+        withUnsafeMutableBytes(of: &colors) { col in
             ps2_build_and_draw(
-                gs, Int32(n),
+                gs, Int32(POINT_COUNT),
                 UnsafeRawPointer(sv.baseAddress!),
                 UnsafeRawPointer(col.baseAddress!)
             )
