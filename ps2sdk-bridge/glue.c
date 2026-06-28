@@ -233,40 +233,32 @@ static void gs_render_init(void) {
     g_gsGlobal->PrimAAEnable = GS_SETTING_ON;
 }
 
-void ps2__gs_render_cube(void* inst) {
+/* Thin wrappers called by Swift's gs_render_cube — each operates on C-side
+ * memalign'd buffers that can't be passed as WASM linear-memory pointers. */
+
+void ps2__cube_calculate_vertices(void* inst, U32 local_screen_ptr) {
+    wasmMemory *mem = PS2Demo_memory((PS2DemoInstance*)inst);
+    MATRIX *local_screen = (MATRIX*)(mem->data + local_screen_ptr);
+    calculate_vertices(get_cube_temp_verts(), get_cube_points_count(), get_cube_c_verts(), *local_screen);
+}
+
+void ps2__cube_convert_xyz(void* inst) {
+    (void)inst;
+    cube_convert_xyz((vertex_f_t *)get_cube_verts(), get_gs_global(), get_cube_points_count(), (vertex_f_t *)get_cube_temp_verts());
+}
+
+void ps2__cube_draw_convert_rgbq(void* inst) {
+    (void)inst;
+    draw_convert_rgbq(get_cube_colors(), get_cube_points_count(), (vertex_f_t *)get_cube_temp_verts(), (color_f_t *)get_cube_c_colours(), 0x80);
+}
+
+void ps2__cube_build_and_draw(void* inst) {
+    (void)inst;
     int n = get_cube_points_count();
-
-    MATRIX local_world, world_view, local_screen;
-
-    ps2__set_object_rotation(inst, 0, ps2__get_object_rotation(inst, 0) + 0.008f);
-    ps2__set_object_rotation(inst, 1, ps2__get_object_rotation(inst, 1) + 0.012f);
-
-    VECTOR object_position = {
-        ps2__get_object_position(inst, 0), ps2__get_object_position(inst, 1),
-        ps2__get_object_position(inst, 2), ps2__get_object_position(inst, 3) };
-    VECTOR object_rotation = {
-        ps2__get_object_rotation(inst, 0), ps2__get_object_rotation(inst, 1),
-        ps2__get_object_rotation(inst, 2), ps2__get_object_rotation(inst, 3) };
-    VECTOR camera_position = {
-        ps2__get_camera_position(inst, 0), ps2__get_camera_position(inst, 1),
-        ps2__get_camera_position(inst, 2), ps2__get_camera_position(inst, 3) };
-    VECTOR camera_rotation = {
-        ps2__get_camera_rotation(inst, 0), ps2__get_camera_rotation(inst, 1),
-        ps2__get_camera_rotation(inst, 2), ps2__get_camera_rotation(inst, 3) };
-
-    create_local_world(local_world, object_position, object_rotation);
-    create_world_view(world_view, camera_position, camera_rotation);
-    create_local_screen(local_screen, local_world, world_view, *get_cube_view_screen());
-
-    calculate_vertices(get_cube_temp_verts(), n, get_cube_c_verts(), local_screen);
-    cube_convert_xyz((vertex_f_t *)get_cube_verts(), get_gs_global(), n, (vertex_f_t *)get_cube_temp_verts());
-    draw_convert_rgbq(get_cube_colors(), n, (vertex_f_t *)get_cube_temp_verts(), (color_f_t *)get_cube_c_colours(), 0x80);
-
     for (int i = 0; i < n; i++) {
         get_cube_gs_vertices()[i].rgbaq = color_to_RGBAQ(get_cube_colors()[i].r, get_cube_colors()[i].g, get_cube_colors()[i].b, get_cube_colors()[i].a, 0.0f);
         get_cube_gs_vertices()[i].xyz2  = vertex_to_XYZ2(get_gs_global(), get_cube_verts()[i][0], get_cube_verts()[i][1], get_cube_verts()[i][2]);
     }
-
     gsKit_clear(get_gs_global(), get_cube_black_rgbaq());
     gsKit_prim_list_triangle_gouraud_3d(get_gs_global(), n, get_cube_gs_vertices());
 }

@@ -117,6 +117,24 @@ func ps2_build_and_draw(
     _ colors: UnsafeRawPointer
 )
 
+// Per-frame buffer operations — each wraps a C-side memalign'd buffer
+// that cannot be addressed as a WASM linear-memory offset.
+@_extern(wasm, module: "ps2", name: "cube_calculate_vertices")
+@_extern(c)
+func ps2_cube_calculate_vertices(_ local_screen: UnsafeMutableRawPointer)
+
+@_extern(wasm, module: "ps2", name: "cube_convert_xyz")
+@_extern(c)
+func ps2_cube_convert_xyz()
+
+@_extern(wasm, module: "ps2", name: "cube_draw_convert_rgbq")
+@_extern(c)
+func ps2_cube_draw_convert_rgbq()
+
+@_extern(wasm, module: "ps2", name: "cube_build_and_draw")
+@_extern(c)
+func ps2_cube_build_and_draw()
+
 // ---------------------------------------------------------------------------
 // Scene state accessors (state lives in glue.c as C statics)
 // ---------------------------------------------------------------------------
@@ -269,19 +287,9 @@ func _gs_flip_screen() {
     ps2_gsKit_flip_screen()
 }
 
-@_expose(wasm, "_gs_render_cube")
-@_cdecl("_gs_render_cube")
-func _gs_render_cube() {
-    let gs = ps2_gsKit_global_get()
-
-    // InlineArray — fixed-size, stored inline in WASM linear memory (no heap).
-    // Size is a compile-time constant so the type carries it; no `count:` arg.
-    var c_verts:      InlineArray<36, VECTOR>     = InlineArray(repeating: (0, 0, 0, 0))
-    var c_colours:    InlineArray<36, VECTOR>     = InlineArray(repeating: (0, 0, 0, 0))
-    var temp_verts:   InlineArray<36, vertex_f_t> = InlineArray(repeating: vertex_f_t(xyzw: (0, 0, 0, 0)))
-    var screen_verts: InlineArray<36, vertex_f_t> = InlineArray(repeating: vertex_f_t(xyzw: (0, 0, 0, 0)))
-    var colors:       InlineArray<36, color_t>    = InlineArray(repeating: color_t(rgbaq: 0))
-
+@_expose(wasm, "gs_render_cube")
+@_cdecl("gs_render_cube")
+func gs_render_cube() {
     // MATRIX = float[16] imported as a 16-element Float tuple
     var local_world:  (Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32,
                        Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32)
@@ -296,7 +304,9 @@ func _gs_render_cube() {
                        Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32)
                     = (0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0)
 
-    // Read scene state from C statics and build local WASM-memory copies
+    ps2_set_object_rotation(0, ps2_get_object_rotation(0) + 0.008)
+    ps2_set_object_rotation(1, ps2_get_object_rotation(1) + 0.012)
+
     var object_position: VECTOR = (
         ps2_get_object_position(0), ps2_get_object_position(1),
         ps2_get_object_position(2), ps2_get_object_position(3))
@@ -310,25 +320,10 @@ func _gs_render_cube() {
         ps2_get_camera_rotation(0), ps2_get_camera_rotation(1),
         ps2_get_camera_rotation(2), ps2_get_camera_rotation(3))
 
-    // Expand indexed mesh into flat per-triangle arrays
-    for i in 0..<POINT_COUNT {
-        let vi = Int(cube_points[i])
-        c_verts[i]   = cube_vertices[vi]
-        c_colours[i] = cube_colours[vi]
-    }
-
-    // Load projection matrix computed once in gs_render_init
     withUnsafeMutableBytes(of: &view_screen) { m in
         ps2_get_view_screen(m.baseAddress!)
     }
 
-    // Spin the cube — update C-side state
-    ps2_set_object_rotation(0, object_rotation.0 + 0.008)
-    ps2_set_object_rotation(1, object_rotation.1 + 0.012)
-    object_rotation.0 = ps2_get_object_rotation(0)
-    object_rotation.1 = ps2_get_object_rotation(1)
-
-    // Model → World
     withUnsafeMutableBytes(of: &object_position) { pos in
         withUnsafeMutableBytes(of: &object_rotation) { rot in
             withUnsafeMutableBytes(of: &local_world) { m in
@@ -337,7 +332,6 @@ func _gs_render_cube() {
         }
     }
 
-    // World → View
     withUnsafeMutableBytes(of: &camera_position) { pos in
         withUnsafeMutableBytes(of: &camera_rotation) { rot in
             withUnsafeMutableBytes(of: &world_view) { m in
@@ -346,7 +340,6 @@ func _gs_render_cube() {
         }
     }
 
-    // Concatenate → local_screen
     withUnsafeMutableBytes(of: &local_world) { lw in
         withUnsafeMutableBytes(of: &world_view) { wv in
             withUnsafeMutableBytes(of: &view_screen) { vs in
@@ -362,57 +355,10 @@ func _gs_render_cube() {
         }
     }
 
-    // Transform vertices into clip space
-    withUnsafeMutableBytes(of: &c_verts) { cv in
-        withUnsafeMutableBytes(of: &local_screen) { ls in
-            withUnsafeMutableBytes(of: &temp_verts) { tv in
-                ps2_calculate_vertices(
-                    tv.baseAddress!,
-                    Int32(POINT_COUNT),
-                    UnsafeRawPointer(cv.baseAddress!),
-                    UnsafeRawPointer(ls.baseAddress!)
-                )
-            }
-        }
+    withUnsafeMutableBytes(of: &local_screen) { ls in
+        ps2_cube_calculate_vertices(ls.baseAddress!)
     }
-
-    // Clip-space → screen pixel coords (Swift port of gsKit_convert_xyz)
-    withUnsafeMutableBytes(of: &temp_verts) { tv in
-        withUnsafeMutableBytes(of: &screen_verts) { sv in
-            _ = gsKit_convert_xyz(
-                output: sv.baseAddress!.assumingMemoryBound(to: vertex_f_t.self),
-                gs: gs,
-                count: Int32(POINT_COUNT),
-                vertices: tv.baseAddress!.assumingMemoryBound(to: vertex_f_t.self)
-            )
-        }
-    }
-
-    // Float colours → GS color_t (fixed-point RGBAQ)
-    withUnsafeMutableBytes(of: &temp_verts) { tv in
-        withUnsafeMutableBytes(of: &c_colours) { cc in
-            withUnsafeMutableBytes(of: &colors) { col in
-                ps2_draw_convert_rgbq(
-                    col.baseAddress!,
-                    Int32(POINT_COUNT),
-                    UnsafeRawPointer(tv.baseAddress!),
-                    UnsafeRawPointer(cc.baseAddress!),
-                    0x80
-                )
-            }
-        }
-    }
-
-    // Clear and draw — GSPRIMPOINT construction happens in glue.c (128-bit
-    // gs_rgbaq/gs_xyz2 can't be built cleanly from WASM; C side does it)
-    ps2_gsKit_clear(gs, blackRgbaQ)
-    withUnsafeMutableBytes(of: &screen_verts) { sv in
-        withUnsafeMutableBytes(of: &colors) { col in
-            ps2_build_and_draw(
-                gs, Int32(POINT_COUNT),
-                UnsafeRawPointer(sv.baseAddress!),
-                UnsafeRawPointer(col.baseAddress!)
-            )
-        }
-    }
+    ps2_cube_convert_xyz()
+    ps2_cube_draw_convert_rgbq()
+    ps2_cube_build_and_draw()
 }

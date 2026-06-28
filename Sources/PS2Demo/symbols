@@ -1,6 +1,5 @@
 ps2_print
 ps2_gs_init
-ps2_gs_render_cube
 ps2_gs_flip_screen
 ps2_exit
 ps2_gsKit_flip_screen
@@ -22,3 +21,7 @@ ps2_set_object_rotation
 ps2_get_object_position
 ps2_get_camera_position
 ps2_get_camera_rotation
+ps2_cube_calculate_vertices
+ps2_cube_convert_xyz
+ps2_cube_draw_convert_rgbq
+ps2_cube_build_and_draw

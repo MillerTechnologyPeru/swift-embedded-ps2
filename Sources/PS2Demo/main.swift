@@ -4,8 +4,7 @@
 // Pipeline: Swift → wasm32-unknown-none-wasm → w2c2 (C89) → mips64r5900el-ps2-elf-gcc → .elf
 //
 // Demo: 3D Rotating Cube using gsKit graphics library
-// Rendering implemented in C (glue.c); Swift calls via WASM imports.
-// Swift implementation preserved in cube.swift with _ prefix.
+// Rendering implemented in Swift (cube.swift); per-frame buffer ops delegated to C via WASM imports.
 
 @_extern(wasm, module: "ps2", name: "print")
 @_extern(c)
@@ -14,10 +13,6 @@ func ps2_print(_ msg: UnsafeRawPointer, _ len: Int32)
 @_extern(wasm, module: "ps2", name: "gs_init")
 @_extern(c)
 func ps2_gs_init()
-
-@_extern(wasm, module: "ps2", name: "gs_render_cube")
-@_extern(c)
-func ps2_gs_render_cube()
 
 @_extern(wasm, module: "ps2", name: "gs_flip_screen")
 @_extern(c)
@@ -52,11 +47,11 @@ func swift_main() {
     print_cstr("Initializing graphics...\n")
     ps2_gs_init()
 
-    print_cstr("Rendering cube (C implementation)...\n")
+    print_cstr("Rendering cube (Swift implementation)...\n")
 
     var frame: Int32 = 0
     while frame < 600 {
-        ps2_gs_render_cube()
+        gs_render_cube()
         ps2_gs_flip_screen()
         frame &+= 1
     }
