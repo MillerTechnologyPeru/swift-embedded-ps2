@@ -242,25 +242,45 @@ void ps2__cube_calculate_vertices(void* inst, U32 local_screen_ptr) {
     calculate_vertices(get_cube_temp_verts(), get_cube_points_count(), get_cube_c_verts(), *local_screen);
 }
 
-void ps2__cube_convert_xyz(void* inst) {
-    (void)inst;
-    cube_convert_xyz((vertex_f_t *)get_cube_verts(), get_gs_global(), get_cube_points_count(), (vertex_f_t *)get_cube_temp_verts());
-}
-
 void ps2__cube_draw_convert_rgbq(void* inst) {
     (void)inst;
     draw_convert_rgbq(get_cube_colors(), get_cube_points_count(), (vertex_f_t *)get_cube_temp_verts(), (color_f_t *)get_cube_c_colours(), 0x80);
 }
 
-void ps2__cube_build_and_draw(void* inst) {
+/* Per-element accessors for cube_build_and_draw's Swift loop */
+
+U32 ps2__get_cube_points_count(void* inst) { (void)inst; return (U32)get_cube_points_count(); }
+
+U32 ps2__get_cube_color_r(void* inst, U32 i) { (void)inst; return (U32)get_cube_colors()[i].r; }
+U32 ps2__get_cube_color_g(void* inst, U32 i) { (void)inst; return (U32)get_cube_colors()[i].g; }
+U32 ps2__get_cube_color_b(void* inst, U32 i) { (void)inst; return (U32)get_cube_colors()[i].b; }
+U32 ps2__get_cube_color_a(void* inst, U32 i) { (void)inst; return (U32)get_cube_colors()[i].a; }
+
+F32 ps2__get_cube_temp_vert_x(void* inst, U32 i) { (void)inst; return get_cube_temp_verts()[i][0]; }
+F32 ps2__get_cube_temp_vert_y(void* inst, U32 i) { (void)inst; return get_cube_temp_verts()[i][1]; }
+F32 ps2__get_cube_temp_vert_z(void* inst, U32 i) { (void)inst; return get_cube_temp_verts()[i][2]; }
+
+F32 ps2__get_cube_vert_x(void* inst, U32 i) { (void)inst; return get_cube_verts()[i][0]; }
+F32 ps2__get_cube_vert_y(void* inst, U32 i) { (void)inst; return get_cube_verts()[i][1]; }
+F32 ps2__get_cube_vert_z(void* inst, U32 i) { (void)inst; return get_cube_verts()[i][2]; }
+
+void ps2__set_cube_vert_x(void* inst, U32 i, F32 v) { (void)inst; get_cube_verts()[i][0] = v; }
+void ps2__set_cube_vert_y(void* inst, U32 i, F32 v) { (void)inst; get_cube_verts()[i][1] = v; }
+void ps2__set_cube_vert_z(void* inst, U32 i, F32 v) { (void)inst; get_cube_verts()[i][2] = v; }
+
+void ps2__set_cube_gs_vertex_rgbaq(void* inst, U32 i, U32 r, U32 g, U32 b, U32 a, F32 q) {
     (void)inst;
-    int n = get_cube_points_count();
-    for (int i = 0; i < n; i++) {
-        get_cube_gs_vertices()[i].rgbaq = color_to_RGBAQ(get_cube_colors()[i].r, get_cube_colors()[i].g, get_cube_colors()[i].b, get_cube_colors()[i].a, 0.0f);
-        get_cube_gs_vertices()[i].xyz2  = vertex_to_XYZ2(get_gs_global(), get_cube_verts()[i][0], get_cube_verts()[i][1], get_cube_verts()[i][2]);
-    }
-    gsKit_clear(get_gs_global(), get_cube_black_rgbaq());
-    gsKit_prim_list_triangle_gouraud_3d(get_gs_global(), n, get_cube_gs_vertices());
+    get_cube_gs_vertices()[i].rgbaq = color_to_RGBAQ((u8)r, (u8)g, (u8)b, (u8)a, q);
+}
+
+void ps2__set_cube_gs_vertex_xyz2(void* inst, U32 i, F32 x, F32 y, F32 z) {
+    (void)inst;
+    get_cube_gs_vertices()[i].xyz2 = vertex_to_XYZ2(get_gs_global(), x, y, z);
+}
+
+void ps2__cube_prim_list_draw(void* inst) {
+    (void)inst;
+    gsKit_prim_list_triangle_gouraud_3d(get_gs_global(), get_cube_points_count(), get_cube_gs_vertices());
 }
 
 /* -------------------------------------------------------------------------

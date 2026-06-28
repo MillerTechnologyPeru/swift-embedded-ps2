@@ -123,17 +123,78 @@ func ps2_build_and_draw(
 @_extern(c)
 func ps2_cube_calculate_vertices(_ local_screen: UnsafeMutableRawPointer)
 
-@_extern(wasm, module: "ps2", name: "cube_convert_xyz")
-@_extern(c)
-func ps2_cube_convert_xyz()
-
 @_extern(wasm, module: "ps2", name: "cube_draw_convert_rgbq")
 @_extern(c)
 func ps2_cube_draw_convert_rgbq()
 
-@_extern(wasm, module: "ps2", name: "cube_build_and_draw")
+// Per-element accessors for cube_build_and_draw's Swift loop
+@_extern(wasm, module: "ps2", name: "get_cube_points_count")
 @_extern(c)
-func ps2_cube_build_and_draw()
+func ps2_get_cube_points_count() -> Int32
+
+@_extern(wasm, module: "ps2", name: "get_cube_color_r")
+@_extern(c)
+func ps2_get_cube_color_r(_ i: Int32) -> UInt32
+
+@_extern(wasm, module: "ps2", name: "get_cube_color_g")
+@_extern(c)
+func ps2_get_cube_color_g(_ i: Int32) -> UInt32
+
+@_extern(wasm, module: "ps2", name: "get_cube_color_b")
+@_extern(c)
+func ps2_get_cube_color_b(_ i: Int32) -> UInt32
+
+@_extern(wasm, module: "ps2", name: "get_cube_color_a")
+@_extern(c)
+func ps2_get_cube_color_a(_ i: Int32) -> UInt32
+
+@_extern(wasm, module: "ps2", name: "get_cube_temp_vert_x")
+@_extern(c)
+func ps2_get_cube_temp_vert_x(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "get_cube_temp_vert_y")
+@_extern(c)
+func ps2_get_cube_temp_vert_y(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "get_cube_temp_vert_z")
+@_extern(c)
+func ps2_get_cube_temp_vert_z(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "get_cube_vert_x")
+@_extern(c)
+func ps2_get_cube_vert_x(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "get_cube_vert_y")
+@_extern(c)
+func ps2_get_cube_vert_y(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "get_cube_vert_z")
+@_extern(c)
+func ps2_get_cube_vert_z(_ i: Int32) -> Float32
+
+@_extern(wasm, module: "ps2", name: "set_cube_vert_x")
+@_extern(c)
+func ps2_set_cube_vert_x(_ i: Int32, _ v: Float32)
+
+@_extern(wasm, module: "ps2", name: "set_cube_vert_y")
+@_extern(c)
+func ps2_set_cube_vert_y(_ i: Int32, _ v: Float32)
+
+@_extern(wasm, module: "ps2", name: "set_cube_vert_z")
+@_extern(c)
+func ps2_set_cube_vert_z(_ i: Int32, _ v: Float32)
+
+@_extern(wasm, module: "ps2", name: "set_cube_gs_vertex_rgbaq")
+@_extern(c)
+func ps2_set_cube_gs_vertex_rgbaq(_ i: Int32, _ r: UInt32, _ g: UInt32, _ b: UInt32, _ a: UInt32, _ q: Float32)
+
+@_extern(wasm, module: "ps2", name: "set_cube_gs_vertex_xyz2")
+@_extern(c)
+func ps2_set_cube_gs_vertex_xyz2(_ i: Int32, _ x: Float32, _ y: Float32, _ z: Float32)
+
+@_extern(wasm, module: "ps2", name: "cube_prim_list_draw")
+@_extern(c)
+func ps2_cube_prim_list_draw()
 
 // ---------------------------------------------------------------------------
 // Scene state accessors (state lives in glue.c as C statics)
@@ -358,7 +419,51 @@ func gs_render_cube() {
     withUnsafeMutableBytes(of: &local_screen) { ls in
         ps2_cube_calculate_vertices(ls.baseAddress!)
     }
-    ps2_cube_convert_xyz()
+    cube_convert_xyz()
     ps2_cube_draw_convert_rgbq()
-    ps2_cube_build_and_draw()
+    cube_build_and_draw()
+}
+
+func cube_convert_xyz() {
+    let n = ps2_get_cube_points_count()
+    let gs = ps2_gsKit_global_get()
+    let psmz = ps2_gsKit_global_get_psmz(gs)
+    let z: Int32
+    switch psmz {
+    case 0:     z = 32  // GS_PSMZ_32
+    case 1:     z = 24  // GS_PSMZ_24
+    case 2, 10: z = 16  // GS_PSMZ_16, GS_PSMZ_16S
+    default:    return
+    }
+    let center_x: Float32 = Float32(ps2_gsKit_global_get_width(gs)) / 2.0
+    let center_y: Float32 = Float32(ps2_gsKit_global_get_height(gs)) / 2.0
+    let max_z: UInt32 = 1 << UInt32(z - 1)
+    for i in 0..<Int(n) {
+        let i32 = Int32(i)
+        ps2_set_cube_vert_x(i32, (ps2_get_cube_temp_vert_x(i32) + 1.0) * center_x)
+        ps2_set_cube_vert_y(i32, (ps2_get_cube_temp_vert_y(i32) + 1.0) * center_y)
+        ps2_set_cube_vert_z(i32, Float32(UInt32((ps2_get_cube_temp_vert_z(i32) + 1.0) * Float32(max_z))))
+    }
+}
+
+func cube_build_and_draw() {
+    let n = ps2_get_cube_points_count()
+    let gs = ps2_gsKit_global_get()
+    for i in 0..<Int(n) {
+        let i32 = Int32(i)
+        ps2_set_cube_gs_vertex_rgbaq(i32,
+            ps2_get_cube_color_r(i32),
+            ps2_get_cube_color_g(i32),
+            ps2_get_cube_color_b(i32),
+            ps2_get_cube_color_a(i32),
+            0.0
+        )
+        ps2_set_cube_gs_vertex_xyz2(i32,
+            ps2_get_cube_vert_x(i32),
+            ps2_get_cube_vert_y(i32),
+            ps2_get_cube_vert_z(i32)
+        )
+    }
+    ps2_gsKit_clear(gs, blackRgbaQ)
+    ps2_cube_prim_list_draw()
 }
