@@ -20,6 +20,8 @@ build/PS2Demo.c / .h        (portable C89, ~500 KB before optimisation)
 build/PS2Demo.elf           (EE ELF for PCSX2 / ps2link)
 ```
 
+<img width="1070" height="711" alt="Screenshot 2026-06-27 at 11 44 23 PM" src="https://github.com/user-attachments/assets/7238c7ab-181e-4445-a09a-00694b0bc165" />
+
 ---
 
 ## Why this works
